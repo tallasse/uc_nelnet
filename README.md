@@ -8,7 +8,7 @@ Requires Drupal 7, Ubercart, and its dependencies
 
 ### Installing
 
-Install like any contributed module
+Install like a standard contributed module: (https://www.drupal.org/docs/7/extend/installing-modules)
 
 ## Deployment
 
