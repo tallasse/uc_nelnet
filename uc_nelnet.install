@@ -1,0 +1,22 @@
+<?php
+// $Id$
+
+/**
+ * @file
+ * uc_nelnet.install
+ */
+ 
+/*
+ * Implementation of hook_uninstall()
+ *
+ * Ensures that variables are removed from the database when the module is uninstalled
+ */
+function uc_nelnet_uninstall()
+{
+	variable_del('uc_nelnet_check');
+	variable_del('uc_nelnet_orderType');
+	variable_del('uc_nelnet_secret_key');
+	variable_del('uc_nelnet_department_id');
+	variable_del('uc_nelnet_checkout_url');
+	variable_del('uc_nelnet_method_title');
+}

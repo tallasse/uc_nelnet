@@ -1,0 +1,427 @@
+<?php
+// $id$
+
+/**
+ * @file
+ * A module to add the Nelnet QuikPAY Payment Gateway to Ubercart on Drupal 7.
+ *
+ * Developed by Jeremy Smith (UNT College of Education) based on uc_infinet for Drupal 6
+ */
+
+/*
+ *hook_help
+ *hook_menu
+ */
+ 
+ /*
+  * Hook Functions (Drupal)
+  */
+
+/**
+ * Implements hook_ucga_display().
+ */
+function uc_nelnet_ucga_display() 
+{
+	// Tell UC Google Analytics to display the e-commerce JS on the custom
+	// order completion page for this module.
+	if (arg(0) == 'cart' && arg(1) == 'nelnet' && arg(2) == 'complete') 
+	{
+		return TRUE;
+	}
+}  
+
+/*
+ * Implementation of hook_menu().
+ */
+function uc_nelnet_menu()
+{
+	$items['cart/nelnet/complete'] = array(
+			'title' => 'Order complete',
+			'page callback' => 'uc_nelnet_complete',
+			'access callback' => 'user_access',
+			'access arguments' => array('access content'),
+			'type' => MENU_CALLBACK,
+		);
+		
+	$items['cart/nelnet/finalize'] = array(
+			'title' => 'Order complete',
+			'page callback' => 'uc_nelnet_finalize',
+			'access callback' => 'user_access',
+			'access arguments' => array('access content'),
+			'type' => MENU_CALLBACK,
+		);
+	return $items;
+}
+
+
+/**
+ * Implements hook_uc_payment_method().
+ *
+ */
+function uc_nelnet_uc_payment_method() 
+{
+	$path = base_path() . drupal_get_path('module', 'uc_nelnet');
+	$title = variable_get('uc_nelnet_method_title', t('Credit card on a secure server:'));
+
+	$methods['nelnet'] = array(
+	'name' => t('Nelnet'),
+	'title' => $title,
+	'review' => variable_get('uc_nelnet_check', FALSE) ? t('Credit card/eCheck') : t('Credit card'),
+	'desc' => t('Redirect to Nelnet QuikPAY to pay by credit card or eCheck.'),
+	'callback' => 'uc_payment_method_nelnet',
+	'redirect' => 'uc_nelnet_form',
+	'weight' => 3,
+	'checkout' => TRUE,
+	'no_gateway' => TRUE,
+	);
+
+	return $methods;
+}
+
+
+/*
+ * Hook Functions (Ubercart)
+ */
+
+/**
+ * Callback for Nelnet payment method settings.
+ */
+function uc_payment_method_nelnet($op, &$order, $form = NULL, &$form_state = NULL) 
+{
+	switch ($op) 
+	{
+		case 'cart-details':
+			$build = array();
+
+			if (variable_get('uc_nelnet_check', FALSE)) 
+			{
+				$build['pay_method'] = array(
+					'#title' => t('Select your payment type:'),
+					'#default_value' => $_SESSION['pay_method'] == 'CK' ? 'CK' : 'CC',
+					'#options' => array(
+						'CC' => t('Credit card'),
+						'CK' => t('Online check'),
+						),
+					);
+				unset($_SESSION['pay_method']);
+			}
+			return $build;
+
+		case 'cart-process':
+			if (isset($form_state['values']['panes']['payment']['details']['pay_method'])) 
+			{
+				$_SESSION['pay_method'] = $form_state['values']['panes']['payment']['details']['pay_method'];
+			}
+			return;
+
+		case 'settings':
+			$form['uc_nelnet_orderType'] = array(
+				'#type' => 'textfield',
+				'#required' => TRUE,
+				'#title' => t('Nelnet Order Type'),
+				'#description' => t('This identifies the Nelnet account.'),
+				'#default_value' => variable_get('uc_nelnet_orderType', ''),
+				'#required' => TRUE
+				);
+			
+			$form['uc_nelnet_department_id'] = array(
+				'#type' => 'textfield',
+				'#title' => t('Nelnet Dept ID'),
+				'#description' => t('Your Nelnet Department ID.'),
+				'#default_value' => variable_get('uc_nelnet_department_id', ''),
+				'#required' => TRUE
+			);			
+			
+			$form['uc_nelnet_secret_key'] = array(
+				'#type' => 'textfield',
+				'#required' => TRUE,
+				'#title' => t('Shared key for order verification'),
+				'#description' => t('The shared key entered to verify your Nelnet md5 hash.'),
+				'#default_value' => variable_get('uc_nelnet_secret_key', ''),
+				'#required' => TRUE
+				);
+				
+			$form['uc_nelnet_checkout_url'] = array(
+				'#type' => 'textfield',
+				'#title' => t('Nelnet Checkout URL'),
+				'#description' => t('The payment gateway URL'),
+				'#default_value' => variable_get('uc_nelnet_checkout_url', ''),
+				'#required' => TRUE
+				);
+
+			$form['uc_nelnet_method_title'] = array(
+				'#type' => 'textfield',
+				'#title' => t('Payment method title'),
+				'#default_value' => variable_get('uc_nelnet_method_title', t('Credit card on a secure server:')),
+				);
+				
+			return $form;
+	}
+} 
+
+/*
+ * Form to build the submission to nelnet website.
+ */
+function uc_nelnet_form($form, &$form_state, $order) 
+{
+	// load Ubercart country codes, set to US if nothing entered
+	$country = uc_get_country_data(array('country_id' => $order->billing_country));
+	if ($country === FALSE) 
+	{
+		$country = array(0 => array('country_iso_code_2' => 'US'));
+	}	
+	
+	// build nelnet transaction data
+	
+	$nelnetData = array();
+	
+	$nelnetData['orderType'] = variable_get('uc_nelnet_orderType', '');
+	$nelnetData['orderNumber'] = $order->order_id;
+	$nelnetData['amount'] = uc_currency_format($order->order_total, FALSE, FALSE, '');
+	$nelnetData['userChoice1'] = variable_get('uc_nelnet_department_id', '');
+	$nelnetData['userChoice10'] = "wdc_nelnet|commerce_payment_wdc_nelnet";
+	$nelnetData['streetOne'] = substr($order->billing_street1, 0, 100);
+	$nelnetData['streetTwo'] = substr($order->billing_street2, 0, 100);
+	$nelnetData['city'] = substr($order->billing_city, 0, 40);
+	$nelnetData['state'] = uc_get_zone_code($order->billing_zone);
+	$nelnetData['zip'] = substr($order->billing_postal_code, 0, 20);
+	$nelnetData['country'] = $country[0]['country_iso_code_2'];
+	$nelnetData['email'] = substr($order->primary_email, 0, 127);
+	$nelnetData['redirectUrl'] = url('cart/nelnet/complete', array('absolute' => TRUE, 'https' => TRUE));
+	$nelnetData['redirectUrlParameters'] = 'transactionType,transactionStatus,transactionId,transactionTotalAmount,orderNumber,userChoice10';
+	$nelnetData['retriesAllowed'] = '2';
+	$nelnetData['timestamp'] = uc_nelnet_generate_timestamp();
+	$nelnetData['hash'] = uc_nelnet_generate_hash($nelnetData, variable_get('uc_nelnet_secret_key', ''));
+
+	// form action from settings
+	$form['#action'] = variable_get('uc_nelnet_checkout_url', 0);
+	$form['#attributes'] = array(
+		'class' => 'formy'
+		);
+
+	// add hidden variables to form
+	foreach($nelnetData as $key => $value)
+	{
+		if(!empty($value))
+		{
+			$form[$key] = array('#type' => 'hidden', '#value' => $value);
+		}
+	}
+
+	// submit button on form
+	$form['submit'] = array(
+		'#type' => 'submit',
+		'#value' => 'Make Payment',
+		'#name' => ''
+	);
+	
+	return $form;
+}
+
+// complete order
+function uc_nelnet_complete($cart_id = 0) 
+{
+	//get the order information
+	$order = uc_order_load($_GET['orderNumber']);
+	$order_amount = substr($_GET['orderAmount'], 0, -2) . "." . substr($_GET['orderAmount'], -2);
+
+	if ($order === FALSE || uc_order_status_data($order->order_status, 'state') != 'in_checkout') 
+	{
+		print t('An error has occurred during payment.  Please contact us to ensure your order has submitted.');
+		exit();
+	}
+
+	watchdog('nelnet', 'Receiving new order notification for order !order_id.', array('!order_id' => check_plain($order->order_id)));
+  
+	//serialize the response to store in a database
+	$serial_response = serialize($_GET);
+		
+	//db_query("UPDATE {uc_orders} SET data = '%s' WHERE order_id = %d", serialize($serial_response), $order->order_id);
+	db_update('uc_orders')
+		->fields(array(
+				'data' => $serial_response
+		))
+		->condition('order_id', $order->order_id)
+		->execute();
+  
+	$url = 'cart/nelnet/finalize/'. $order->order_id;
+	drupal_goto($url);
+	exit();
+}
+
+// finalize transaction by taking data from nelnet
+function uc_nelnet_finalize() 
+{
+	$order = uc_order_load(arg(3));
+	$has_err = FALSE;
+	
+	if ($order->order_status != "in_checkout") 
+	{
+		$url = 'user';
+		drupal_goto($url);
+		exit();
+	}
+	else 
+	{
+		$message = '';
+	
+		$response = $order->data;
+		unset($response['q']);
+		
+		if(!uc_nelnet_authenticate_transaction($response))
+		{
+			$has_err = TRUE;
+		}
+	 
+		//convert the nelnet formatted currency to real dollar amount.  (Ex: 1999 to 19.99)
+		$theOrderAmount = $response['transactionTotalAmount'] * 0.01;
+		
+		if ($response['accountHolderName'])
+		{
+			$billing_name_array = explode(" ", $response['accountHolderName']);
+			$billing_name_array_count = count($billing_name_array);
+			
+			if($billing_name_array_count>1){
+				$order->billing_first_name = $billing_name_array[0];
+				$order->billing_last_name = $billing_name_array[$billing_name_array_count - 1];
+			}else{
+				$order->billing_first_name = $order->delivery_first_name;
+				$order->billing_last_name = $order->delivery_last_name;
+			}
+		}
+		else 
+		{
+			$order->billing_first_name = $order->delivery_first_name;
+			$order->billing_last_name = $order->delivery_last_name;
+		}
+		
+		if(isset($response['streetOne'])&&($response['streetOne']!=''))
+		{
+			$order->billing_street1 = $response['streetOne'];
+		}
+		
+		if(isset($response['streetTwo'])&&($response['streetTwo']!=''))
+		{
+			$order->billing_street2 = $response['streetTwo'];
+		}
+		
+		if(isset($response['city'])&&($response['city']!=''))
+		{
+			$order->city = $response['city'];
+		}
+		
+		if(isset($response['zip'])&&($response['zip']!=''))
+		{
+			$order->billing_postal_code = $response['zip'];
+		}
+		
+		if(isset($response['daytimePhone'])&&($response['daytimePhone']!=''))
+		{
+			$order->billing_phone = $response['daytimePhone'];
+		}
+		
+		//$zone_id = db_result(db_query("SELECT zone_id FROM {uc_zones} WHERE zone_code LIKE '%s'", $response['state']));
+		$zone_id = db_query("SELECT zone_id FROM {uc_zones} WHERE zone_code LIKE :state", array(':state' => $response['state']))->fetchField();
+		
+		if (!empty($zone_id)) 
+		{
+			$order->billing_zone = $zone_id;
+		}
+		
+		//$country_id = db_result(db_query("SELECT country_id FROM {uc_countries} WHERE country_name LIKE '%s'", $response['country']));
+		$country_id = db_query("SELECT country_id FROM {uc_countries} WHERE country_name LIKE :country", array(':country' => $response['country']))->fetchField();
+		
+		if (!empty($zone_id)) 
+		{
+			$order->billing_country = $country_id;
+		}
+		
+		if(!$has_err)
+		{		
+			// Save changes to order without it's completion (it will be on finalization step)
+			uc_order_save($order);
+										  
+			if (strtolower($response['email']) !== strtolower($order->primary_email)) 
+			{
+				uc_order_comment_save($order->order_id, 0, t('Customer used a different e-mail address during payment: !email', array('!email' => check_plain($response['email']))), 'admin', uc_order_state_default($order->order_status), FALSE);
+				$message .= "\n" . t('Customer used a different e-mail address during payment: !email', array('!email' => check_plain($response['email'])));
+			}
+		
+			if ($response['transactionStatus'] == 1 && is_numeric($theOrderAmount)) 
+			{
+				$store_site_name = variable_get('site_name', "Nelnet Payment Gateway");
+				$comment = t('Paid by !type (confirmation #!confirmation), !storename order #!order.', array('!type' => $response['transactionAcountType'], '!confirmation' => $response['transactionId'], '!storename' => $store_site_name, '!order' => check_plain($response['orderNumber'])));
+				uc_payment_enter($order->order_id, 'nelnet', $theOrderAmount, $order->uid, NULL, $comment);
+				$message .= t(' Credit card charged: !amount', array('!amount' => uc_currency_format($theOrderAmount)));
+				$message .= " " . $comment;
+				// Add a comment to let sales team know this came in through the site.
+				uc_order_comment_save($order->order_id, 0, $message, 'admin', uc_order_state_default($order->order_status), FALSE);
+			}
+			else 
+			{
+				drupal_set_message(t('Your order will be processed as soon as your payment clears the payment processing center.'));
+				uc_order_comment_save($order->order_id, 0, t('!type payment is pending approval at nelnet.com.', array('!type' => $response['transactionAcountType'], 'admin')), uc_order_state_default($order->order_status), FALSE);
+				$message .= "\n" . t(' CC payment is pending approval at nelnet.com.');
+			}
+			
+			$output = uc_cart_complete_sale($order, variable_get('uc_new_customer_login', FALSE));
+			
+			$page = variable_get('uc_cart_checkout_complete_page', '');
+						
+			if (!empty($page)) 
+			{
+				drupal_goto($page);
+			}
+		}
+		else
+		{
+			drupal_set_title('Unauthorized attempt');
+			$output = 'Attempted unverified nelnet completion for this order.';
+			uc_order_comment_save($order->order_id, 0, t('Attempted unverified nelnet completion for this order.' . $nelnet_hash . "-" . $hash_from_nelnet ), 'admin', uc_order_state_default($order->order_status), FALSE);
+			
+		}
+		
+		return $output;
+	} //end of else
+}
+
+/* HELPER FUNCTIONS */
+
+// generate millisecond timestamp
+function uc_nelnet_generate_timestamp()
+{
+	$uSeconds = microtime(true);
+	return (string) round(($uSeconds * 1000));
+}
+
+// generate hash from array and key
+function uc_nelnet_generate_hash($nelnetData, $secretKey)
+{
+	$hashStr = '';
+	foreach($nelnetData as $name => $value)
+	{
+		$hashStr .= $value;
+	}
+	$hashStr .= $secretKey;
+	return md5($hashStr);
+}
+
+// compare returned hash to our generated one
+function uc_nelnet_authenticate_transaction($nelnetData)
+{
+	// First check timestamp; Nelnet specification says it must be within 5 minutes of now
+	$rTimestamp = floatval($nelnetData['timestamp']);
+	$cTimestamp = uc_nelnet_generate_timestamp();
+	if($cTimestamp - $rTimestamp > 600000) return false;
+	
+	// Next we calculate a hash value and check against the md5 hash that Nelnet sends
+	$rHash = $nelnetData['hash'];
+	unset($nelnetData['hash']);
+	$cHash = uc_nelnet_generate_hash($nelnetData, variable_get('uc_nelnet_secret_key', ''));
+	
+	if($rHash!=$cHash) return false;
+	
+	return true;
+}
+
+?>
