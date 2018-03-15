@@ -179,7 +179,6 @@ function uc_nelnet_form($form, &$form_state, $order)
 	$nelnetData['orderNumber'] = $order->order_id;
 	$nelnetData['amount'] = uc_currency_format($order->order_total, FALSE, FALSE, '');
 	$nelnetData['userChoice1'] = variable_get('uc_nelnet_department_id', '');
-	$nelnetData['userChoice10'] = "wdc_nelnet|commerce_payment_wdc_nelnet";
 	$nelnetData['streetOne'] = substr($order->billing_street1, 0, 100);
 	$nelnetData['streetTwo'] = substr($order->billing_street2, 0, 100);
 	$nelnetData['city'] = substr($order->billing_city, 0, 40);
@@ -188,7 +187,7 @@ function uc_nelnet_form($form, &$form_state, $order)
 	$nelnetData['country'] = $country[0]['country_iso_code_2'];
 	$nelnetData['email'] = substr($order->primary_email, 0, 127);
 	$nelnetData['redirectUrl'] = url('cart/nelnet/complete', array('absolute' => TRUE, 'https' => TRUE));
-	$nelnetData['redirectUrlParameters'] = 'transactionType,transactionStatus,transactionId,transactionTotalAmount,orderNumber,userChoice10';
+	$nelnetData['redirectUrlParameters'] = 'transactionType,transactionStatus,transactionId,transactionTotalAmount,orderNumber';
 	$nelnetData['retriesAllowed'] = '2';
 	$nelnetData['timestamp'] = uc_nelnet_generate_timestamp();
 	$nelnetData['hash'] = uc_nelnet_generate_hash($nelnetData, variable_get('uc_nelnet_secret_key', ''));
