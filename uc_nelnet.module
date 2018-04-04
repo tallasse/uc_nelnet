@@ -66,7 +66,7 @@ function uc_nelnet_uc_payment_method()
 	$methods['nelnet'] = array(
 	'name' => t('Nelnet'),
 	'title' => $title,
-	'review' => variable_get('uc_nelnet_check', FALSE) ? t('Credit card/eCheck') : t('Credit card'),
+	'review' => variable_get('uc_nelnet_check', FALSE) ? t('Credit Card/eCheck') : t('Credit Card'),
 	'desc' => t('Redirect to Nelnet QuikPAY to pay by credit card or eCheck.'),
 	'callback' => 'uc_payment_method_nelnet',
 	'redirect' => 'uc_nelnet_form',
@@ -99,8 +99,8 @@ function uc_payment_method_nelnet($op, &$order, $form = NULL, &$form_state = NUL
 					'#title' => t('Select your payment type:'),
 					'#default_value' => $_SESSION['pay_method'] == 'CK' ? 'CK' : 'CC',
 					'#options' => array(
-						'CC' => t('Credit card'),
-						'CK' => t('Online check'),
+						'CC' => t('Credit Card'),
+						'CK' => t('Online Check'),
 						),
 					);
 				unset($_SESSION['pay_method']);
@@ -119,7 +119,7 @@ function uc_payment_method_nelnet($op, &$order, $form = NULL, &$form_state = NUL
 				'#type' => 'textfield',
 				'#required' => TRUE,
 				'#title' => t('Nelnet Order Type'),
-				'#description' => t('This identifies the Nelnet account.'),
+				'#description' => t('This identifies the Nelnet Account/Order Type.'),
 				'#default_value' => variable_get('uc_nelnet_orderType', ''),
 				'#required' => TRUE
 				);
@@ -127,10 +127,10 @@ function uc_payment_method_nelnet($op, &$order, $form = NULL, &$form_state = NUL
 			$form['uc_nelnet_department_id'] = array(
 				'#type' => 'textfield',
 				'#title' => t('Nelnet Dept ID'),
-				'#description' => t('Your Nelnet Department ID.'),
+				'#description' => t('Your Nelnet Department ID/Chartstring.'),
 				'#default_value' => variable_get('uc_nelnet_department_id', ''),
 				'#required' => TRUE
-			);			
+				);			
 			
 			$form['uc_nelnet_secret_key'] = array(
 				'#type' => 'textfield',
@@ -191,6 +191,8 @@ function uc_nelnet_form($form, &$form_state, $order)
 	$nelnetData['retriesAllowed'] = '2';
 	$nelnetData['timestamp'] = uc_nelnet_generate_timestamp();
 	$nelnetData['hash'] = uc_nelnet_generate_hash($nelnetData, variable_get('uc_nelnet_secret_key', ''));
+	
+	//watchdog('uc_nelnet', 'timestamp = ' . $nelnetData['timestamp']);
 
 	// form action from settings
 	$form['#action'] = variable_get('uc_nelnet_checkout_url', 0);
@@ -275,24 +277,7 @@ function uc_nelnet_finalize()
 		//convert the nelnet formatted currency to real dollar amount.  (Ex: 1999 to 19.99)
 		$theOrderAmount = $response['transactionTotalAmount'] * 0.01;
 		
-		if ($response['accountHolderName'])
-		{
-			$billing_name_array = explode(" ", $response['accountHolderName']);
-			$billing_name_array_count = count($billing_name_array);
-			
-			if($billing_name_array_count>1){
-				$order->billing_first_name = $billing_name_array[0];
-				$order->billing_last_name = $billing_name_array[$billing_name_array_count - 1];
-			}else{
-				$order->billing_first_name = $order->delivery_first_name;
-				$order->billing_last_name = $order->delivery_last_name;
-			}
-		}
-		else 
-		{
-			$order->billing_first_name = $order->delivery_first_name;
-			$order->billing_last_name = $order->delivery_last_name;
-		}
+		//updating order billing info using billing data from Nelnet
 		
 		if(isset($response['streetOne'])&&($response['streetOne']!=''))
 		{
@@ -319,7 +304,6 @@ function uc_nelnet_finalize()
 			$order->billing_phone = $response['daytimePhone'];
 		}
 		
-		//$zone_id = db_result(db_query("SELECT zone_id FROM {uc_zones} WHERE zone_code LIKE '%s'", $response['state']));
 		$zone_id = db_query("SELECT zone_id FROM {uc_zones} WHERE zone_code LIKE :state", array(':state' => $response['state']))->fetchField();
 		
 		if (!empty($zone_id)) 
@@ -327,7 +311,6 @@ function uc_nelnet_finalize()
 			$order->billing_zone = $zone_id;
 		}
 		
-		//$country_id = db_result(db_query("SELECT country_id FROM {uc_countries} WHERE country_name LIKE '%s'", $response['country']));
 		$country_id = db_query("SELECT country_id FROM {uc_countries} WHERE country_name LIKE :country", array(':country' => $response['country']))->fetchField();
 		
 		if (!empty($zone_id)) 
@@ -337,7 +320,7 @@ function uc_nelnet_finalize()
 		
 		if(!$has_err)
 		{		
-			// Save changes to order without it's completion (it will be on finalization step)
+			// Save changes to order without its completion (it will be on finalization step)
 			uc_order_save($order);
 										  
 			if (strtolower($response['email']) !== strtolower($order->primary_email)) 
@@ -375,8 +358,8 @@ function uc_nelnet_finalize()
 		else
 		{
 			drupal_set_title('Unauthorized attempt');
-			$output = 'Attempted unverified nelnet completion for this order.';
-			uc_order_comment_save($order->order_id, 0, t('Attempted unverified nelnet completion for this order.' . $nelnet_hash . "-" . $hash_from_nelnet ), 'admin', uc_order_state_default($order->order_status), FALSE);
+			$output = 'Attempted unverified Nelnet completion for this order.';
+			uc_order_comment_save($order->order_id, 0, t('Attempted unverified Nelnet completion for this order.' . $nelnet_hash . "-" . $hash_from_nelnet ), 'admin', uc_order_state_default($order->order_status), FALSE);
 			
 		}
 		
@@ -402,6 +385,9 @@ function uc_nelnet_generate_hash($nelnetData, $secretKey)
 		$hashStr .= $value;
 	}
 	$hashStr .= $secretKey;
+	
+	//watchdog('uc_nelnet', 'hashString = ' . md5($hashStr));
+	
 	return md5($hashStr);
 }
 
