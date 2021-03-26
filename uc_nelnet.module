@@ -168,7 +168,7 @@ function uc_nelnet_form($form, &$form_state, $order)
 	$country = uc_get_country_data(array('country_id' => $order->billing_country));
 	if ($country === FALSE) 
 	{
-		$country = array(0 => array('country_iso_code_2' => 'US'));
+		$country = array(0 => array('country_iso_code_2' => 'US', 'country_name' => 'United States');
 	}	
 	
 	// build nelnet transaction data
@@ -184,7 +184,7 @@ function uc_nelnet_form($form, &$form_state, $order)
 	$nelnetData['city'] = substr($order->billing_city, 0, 40);
 	$nelnetData['state'] = uc_get_zone_code($order->billing_zone);
 	$nelnetData['zip'] = substr($order->billing_postal_code, 0, 20);
-	$nelnetData['country'] = $country[0]['country_iso_code_2'];
+	$nelnetData['country'] = $country[0]['country_name']; // 3/26/21 JMS - Nelnet now wants county name instead of ISO country code
 	$nelnetData['email'] = substr($order->primary_email, 0, 127);
 	$nelnetData['redirectUrl'] = url('cart/nelnet/complete', array('absolute' => TRUE, 'https' => TRUE));
 	$nelnetData['redirectUrlParameters'] = 'transactionType,transactionStatus,transactionId,transactionTotalAmount,orderNumber';
